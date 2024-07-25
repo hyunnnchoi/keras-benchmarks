@@ -1,8 +1,14 @@
+import json
+import os
 import keras
 import keras_nlp
 
 import benchmark
 from benchmark import utils
+import tensorflow as tf
+
+# MultiWorkerMirroredStrategy
+strategy = tf.distribute.MultiWorkerMirroredStrategy()
 
 
 def get_model():
@@ -19,6 +25,7 @@ def run(batch_size=benchmark.MISTRAL_FIT_BATCH_SIZE):
         keras.config.set_dtype_policy(benchmark.FLOAT_A100)
     else:
         keras.mixed_precision.set_global_policy(benchmark.FLOAT_A100)
+
     preprocessor = keras_nlp.models.MistralCausalLMPreprocessor.from_preset(
         "mistral_7b_en",
         sequence_length=benchmark.MISTRAL_SEQ_LENGTH,
@@ -26,13 +33,15 @@ def run(batch_size=benchmark.MISTRAL_FIT_BATCH_SIZE):
     dataset = utils.get_train_dataset_for_text_gen(
         preprocessor, batch_size, seq_len=benchmark.MISTRAL_SEQ_LENGTH
     )
-    model = get_model()
 
-    model.compile(
-        loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        optimizer=keras.optimizers.AdamW(),
-        jit_compile=utils.use_jit(),
-    )
+    with strategy.scope():
+        model = get_model()
+        model.compile(
+            loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+            optimizer=keras.optimizers.AdamW(),
+            jit_compile=utils.use_jit(),
+        )
+
     return utils.fit(model, dataset)
 
 
